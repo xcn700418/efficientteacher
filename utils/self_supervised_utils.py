@@ -197,13 +197,13 @@ class FairPseudoLabel:
       
         target_out_targets_perspective = []
         invalid_target_shape = True
+        # [batchsize, num_anchor, [bbx,obj,prob~20]]
         out = non_max_suppression_ssod(out, conf_thres=self.nms_conf_thres, iou_thres=self.nms_iou_thres, \
                                        num_points=self.num_points, multi_label=self.multi_label, labels=lb)
-        out = [out_tensor.detach() for out_tensor in out]
+        out = [out_tensor.detach() for out_tensor in out] # Ensure
         target_out_np = output_to_target_ssod(out)
         target_out_targets = torch.tensor(target_out_np)
         target_shape = target_out_targets.shape
-
         if(target_shape[0] > 0 and target_shape[1] > 6):
             for i, img in enumerate(target_imgs_ori):
                 # image_targets = target_out_targets[target_out_targets[:, 0] == i]
@@ -238,8 +238,8 @@ class FairPseudoLabel:
            invalid_target_shape = False
            if self.debug:
               if RANK in [-1 ,0]:
-                draw_image = plot_images_ssod(copy.deepcopy(target_imgs), target_out_targets_perspective, fname='/mnt/bowen/EfficientTeacher/effcient_teacher_pseudo_label.jpg', names=self.names)            
-                draw_image = plot_images(copy.deepcopy(target_imgs), gt, fname='/mnt/bowen/EfficientTeacher/effcient_teacher_gt.jpg', names=self.names)            
+                draw_image = plot_images_ssod(copy.deepcopy(target_imgs), target_out_targets_perspective, fname='/home/robot/xuchennan/projects/YOLO-SSOD/peudoimg/effcient_teacher_pseudo_label.jpg', names=self.names)            
+                draw_image = plot_images(copy.deepcopy(target_imgs), gt, fname='/home/robot/xuchennan/projects/YOLO-SSOD/peudoimg/effcient_teacher_gt.jpg', names=self.names)            
                     # raise 0
 
         return target_out_targets_perspective, invalid_target_shape

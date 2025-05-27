@@ -32,7 +32,7 @@ def parse_opt(known=False):
     parser = argparse.ArgumentParser()
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument("opts",help="Modify config options using the command-line",default=None,nargs=argparse.REMAINDER)
-    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
+    # parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
     return opt
@@ -45,7 +45,7 @@ def setup(cfg):
         # check_requirements(exclude=['thop'])
  
     cfg.save_dir = str(increment_path(Path(cfg.project) / cfg.name, exist_ok=cfg.exist_ok))
-
+    LOGGER.info(f'set RANK={RANK}, LOCAL_RANK={LOCAL_RANK}, WORLD_SIZE={WORLD_SIZE}')
     # DDP mode
     device = select_device(cfg.device, batch_size=cfg.Dataset.batch_size)
     if LOCAL_RANK != -1:
@@ -65,7 +65,7 @@ def main(opt, callbacks=Callbacks()):
     cfg = get_cfg()
     cfg.merge_from_file(opt.cfg)
     cfg.merge_from_list(opt.opts)
-
+    LOGGER.info(f'Initialized process group: RANK={RANK}, LOCAL_RANK={LOCAL_RANK}, WORLD_SIZE={WORLD_SIZE}')
     device = setup(cfg)
     cfg.freeze()
     if cfg.SSOD.train_domain:
@@ -73,6 +73,7 @@ def main(opt, callbacks=Callbacks()):
     else:
         trainer = Trainer(cfg, device, callbacks, LOCAL_RANK, RANK, WORLD_SIZE)
         
+    LOGGER.info(f'train_domain:{cfg.SSOD.train_domain}')
     trainer.train(callbacks, val)
     if WORLD_SIZE > 1 and RANK == 0:
         LOGGER.info('Destroying process group... ')

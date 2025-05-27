@@ -1,0 +1,105 @@
+# EfficientTeacher by Alibaba Cloud 
+
+# Parameters
+project: 'exp_voc'
+epochs: 10
+# weights: '/mnt/bowen/runs_keypoints/exp565/weights/last.pt'
+weights: ''
+prune_finetune: False
+linear_lr: True
+#find_unused_parameters: True
+
+hyp:
+  lr0: 0.01
+  lrf: 1.0
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  scale: 0.9
+  burn_epochs: 0 # modify 0 or 15 or 200
+  no_aug_epochs: 0
+  warmup_epochs: 3
+  mixup: 0.1
+  mosaic: 1.0
+
+Model:
+  depth_multiple: 0.33  # model depth multiple
+  width_multiple: 0.25  # layer channel multiple
+  # anchors: 1  # number of anchors
+  Backbone:
+    name: 'YoloV5'
+    activation: 'SiLU'
+  Neck:
+    name: 'YoloV5'
+    in_channels: [256, 512, 1024]
+    out_channels: [256, 512, 1024]
+    activation: 'SiLU'
+  Head:
+    name: 'YoloV5'
+  anchors: [[10,13, 16,30, 33,23],[30,61, 62,45, 59,119],[116,90, 156,198, 373,326]]  # P5/32]
+Loss:
+  type: 'ComputeLoss'
+
+
+Dataset:
+  data_name: 'VOC'
+  train: /home/robot/storage/xuchennan/projects/efficientteacher/datasets/VOC/train_p10.0_labeled_data.txt
+  val: /home/robot/storage/xuchennan/projects/efficientteacher/datasets/VOC/val.txt
+  test: /home/robot/storage/xuchennan/projects/efficientteacher/datasets/VOC/val.txt
+  target: /home/robot/storage/xuchennan/projects/efficientteacher/datasets/VOC/train_p10.0_unlabeled_data.txt
+
+  nc: 20  # number of classes
+  np: 0 # number of keypoints
+  
+  names: ['aeroplane', 'bicycle', 'bird', 'boat', 'bottle', 'bus', 'car', 'cat', 'chair', 'cow', 'diningtable', 'dog',
+          'horse', 'motorbike', 'person', 'pottedplant', 'sheep', 'sofa', 'train', 'tvmonitor']
+
+  img_size: 640
+  batch_size: 32
+  workers: 32 # modify
+  #workers: 8
+
+
+SSOD:
+  train_domain: True
+  nms_conf_thres: 0.1
+  nms_iou_thres: 0.65 # lower to get more pseudo box
+  teacher_loss_weight: 1.0 # modify to 1.0 or 2.0 or 3.0?
+
+  # box: 0.02
+  # cls: 0.21638
+  # cls_pw: 0.5
+  # obj: 0.51728
+  # obj_pw: 0.67198
+
+  cls_loss_weight: 0.3
+  box_loss_weight: 0.05 # might be higher
+  obj_loss_weight: 0.7
+  loss_type: 'ComputeStudentMatchLoss'
+  ignore_thres_low: 0.1
+  ignore_thres_high: 0.6
+  uncertain_aug: True
+  use_ota: False
+  multi_label: False
+  debug: False
+  ignore_obj: False
+  pseudo_label_with_obj: True
+  pseudo_label_with_bbox: True
+  pseudo_label_with_cls: True
+  with_da_loss: False
+  da_loss_weights: 0.01
+  epoch_adaptor: True
+  # resample_high_percent: 0.25
+  # resample_low_percent: 0.99
+  ema_rate: 0.999
+  cosine_ema: True
+  imitate_teacher: False
+  ssod_hyp:
+    with_gt: True   # modify true/flase
+    mosaic: 1.0
+    cutout: 0.5
+    autoaugment: 0.5
+    scale: 0.8
+    flipud: 0.0  # image flip up-down (probability)
+    fliplr: 0.5  # image flip left-right (probability)
+  #second_teacher_weight: '/home/mingtao/materials/bowen_weights/exp23/xiaokong-yolov5l-23.pt'

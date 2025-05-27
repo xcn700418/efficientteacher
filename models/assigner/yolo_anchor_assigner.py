@@ -38,17 +38,17 @@ class YOLOAnchorAssigner(nn.Module):
 
         if with_pseudo_score: #pseudo label assigner
             if self.ota:
-                return self.build_ota_targets_with_score(p, targets)
+                return self.build_ota_targets_with_score(p, targets) # false
             else:
-                return self.build_uc_targets_aug(p, targets)
+                return self.build_uc_targets_aug(p, targets)         # for uncertain pseudo label
 
         if self.np > 0: #keypoints loss assigner
-            return self.build_targets_kps(p, targets, self.np)
+            return self.build_targets_kps(p, targets, self.np)       # keypoint only 
 
         if self.ota: #supervised loss assigner
-            return self.build_ota_targets(p, targets)
+            return self.build_ota_targets(p, targets)                # false
         else:
-            return self.build_targets(p, targets)
+            return self.build_targets(p, targets)                    # for gt label
 
     def build_targets_kps(self, p, targets, npoint = 8):
       # Build targets for compute_loss(), input targets(image,class,x,y,w,h)
@@ -317,6 +317,11 @@ class YOLOAnchorAssigner(nn.Module):
         return indices, anch
     
     def build_targets(self, p, targets):
+        """Prepares model targets from input targets (image,class,x,y,w,h) for loss computation, 
+        returning class, box, indices, and anchors.
+        """
+        #targets: [batch, cls, x, y, x, y, conf, obj_conf, cls_conf]
+        
         targets = targets[:,:6]
         na, nt = self.na, targets.shape[0]  # number of anchors, targets
         tcls, tbox, indices, anch = [], [], [], []
@@ -364,11 +369,10 @@ class YOLOAnchorAssigner(nn.Module):
 
             # Append
             a = t[:, 6].long()  # anchor indices
-            indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
+            indices.append((b, a, gj.clamp_(0, gain[3].long() - 1), gi.clamp_(0, gain[2].long() - 1)))  # image, anchor, grid indices
             tbox.append(torch.cat((gxy - gij, gwh), 1))  # box
             anch.append(anchors[a])  # anchors
             tcls.append(c)  # class
-
         return tcls, tbox, indices, anch
     
     def build_ota_targets_with_score(self, p, targets):
@@ -687,8 +691,10 @@ class YOLOAnchorAssigner(nn.Module):
             # Append
             # a = t[:, 6].long()  # anchor indices
             a = t[:, 7].long()  # anchor indices
-            score = t[:,6].T
-            indices.append((b, a, gj.clamp_(0, gain[3] - 1), gi.clamp_(0, gain[2] - 1)))  # image, anchor, grid indices
+            # score = t[:,6].T # original 
+            score = t[:, 6].permute(*torch.arange(t[:, 6].ndim - 1, -1, -1))
+
+            indices.append((b, a, gj.clamp_(0, gain[3].long() - 1), gi.clamp_(0, gain[2].long() - 1)))  # image, anchor, grid indices
             tbox.append(torch.cat((gxy - gij, gwh), 1))  # box
             anch.append(anchors[a])  # anchors
             tcls.append(c)  # class

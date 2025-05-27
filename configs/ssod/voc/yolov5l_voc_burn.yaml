@@ -74,7 +74,7 @@ SSOD:
   ema_rate: 0.999
   cosine_ema: True
   ssod_hyp:
-    with_gt: False
+    with_gt: True
     scale: 0.8
     flipud: 0.0  # image flip up-down (probability)
     fliplr: 0.5  # image flip left-right (probability)

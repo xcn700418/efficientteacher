@@ -27,7 +27,9 @@ class YoloV8Detect(nn.Module):
         # channels_list = [make_divisible(i * width_mul, 8) for i in (channels_list_neck)]
 
         self.nc = cfg.Dataset.nc
-        self.no = self.nc + 5  # number of outputs per anchor
+        # self.no = self.nc + 5  # number of outputs per anchor
+        self.reg_max = cfg.Loss.reg_max # 16 for yolov8l
+        self.no = self.nc + self.reg_max * 4 
         self.nl = cfg.Model.Neck.num_outs# number of detection layers
         # self.n_anchors = num_anchors
         self.num_keypoints = cfg.Dataset.np
@@ -47,10 +49,11 @@ class YoloV8Detect(nn.Module):
         self.inplace = cfg.Model.inplace
         # stride = [8, 16, 32]  # strides computed during build
         # self.stride = torch.tensor(stride)
-        self.reg_max = cfg.Loss.reg_max
+        # self.reg_max = cfg.Loss.reg_max
         self.use_dfl = cfg.Loss.use_dfl
         self.stride = torch.Tensor(cfg.Model.Head.strides)
         self.proj_conv = nn.Conv2d(self.reg_max + 1, 1, 1, bias=False)
+        # self.proj_conv = nn.Conv2d(self.reg_max, 1, 1, bias=False)
         self.grid_cell_offset = cfg.Loss.grid_cell_offset
         self.grid_cell_size = cfg.Loss.grid_cell_size
 
@@ -73,9 +76,13 @@ class YoloV8Detect(nn.Module):
         for out_c in cfg.Model.Neck.out_channels:
             ch.append(int(out_c * cfg.Model.width_multiple))
         # Efficient decoupled head layers
-        c2, c3 = max((16, ch[0] // 4, (self.reg_max + 1) * 4)), max(ch[0], self.nc)  # channels
+        # c2, c3 = max((16, ch[0] // 4, (self.reg_max + 1) * 4)), max(ch[0], self.nc)  # channels
+        # self.cv2 = nn.ModuleList(
+        #     nn.Sequential(Conv(x, c2, 3, 1, None, 1, act=CONV_ACT), Conv(c2, c2, 3, 1, None, 1, act=CONV_ACT), nn.Conv2d(c2, 4 * (self.reg_max + 1), 1)) for x in ch)
+
+        c2, c3 = max((16, ch[0] // 4, self.reg_max * 4)), max(ch[0], min(self.nc, 100))  # channels
         self.cv2 = nn.ModuleList(
-            nn.Sequential(Conv(x, c2, 3, 1, None, 1, act=CONV_ACT), Conv(c2, c2, 3, 1, None, 1, act=CONV_ACT), nn.Conv2d(c2, 4 * (self.reg_max + 1), 1)) for x in ch)
+            nn.Sequential(Conv(x, c2, 3, 1, None, 1, act=CONV_ACT), Conv(c2, c2, 3, 1, None, 1, act=CONV_ACT), nn.Conv2d(c2, 4 * self.reg_max, 1)) for x in ch)
         self.cv3 = nn.ModuleList(nn.Sequential(Conv(x, c3, 3, 1, None, 1, act=CONV_ACT), Conv(c3, c3, 3, 1, None, 1, act=CONV_ACT), nn.Conv2d(c3, self.nc, 1)) for x in ch)
         # for i in range(self.nl):
         #     idx = i*5
@@ -90,8 +97,10 @@ class YoloV8Detect(nn.Module):
         for a, b, s in zip(self.cv2, self.cv3, self.stride):  # from
             a[-1].bias.data[:] = 1.0  # box
             b[-1].bias.data[:self.nc] = math.log(5 / self.nc / (640 / s) ** 2)  # cls (.01 objects, 80 classes, 640 img)
-        self.proj = nn.Parameter(torch.linspace(0, self.reg_max, self.reg_max + 1), requires_grad=False)
-        self.proj_conv.weight = nn.Parameter(self.proj.view([1, self.reg_max + 1, 1, 1]).clone().detach(),
+        self.proj = nn.Parameter(torch.linspace(0, self.reg_max, self.reg_max), requires_grad=False)
+        # self.proj_conv.weight = nn.Parameter(self.proj.view([1, self.reg_max + 1, 1, 1]).clone().detach(),
+        #                                            requires_grad=False)
+        self.proj_conv.weight = nn.Parameter(self.proj.view([1, self.reg_max, 1, 1]).clone().detach(),
                                                    requires_grad=False)
 
     def get_output_and_grid(self, output, k, stride, dtype):
@@ -127,10 +136,12 @@ class YoloV8Detect(nn.Module):
                 cls_output = self.cv3[i](x[i])
                 cls_score_list.append(cls_output.flatten(2).permute((0, 2, 1)))
                 reg_distri_list.append(reg_output.flatten(2).permute((0, 2, 1)))
+                #x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
             
             cls_score_list = torch.cat(cls_score_list, axis=1)
             reg_distri_list = torch.cat(reg_distri_list, axis=1)
-
+            '''cls_score_list:[batch_size, total_number_of_anchors, nc], 
+            reg_distri_list:[batch_size, total_number_of_anchors, 4 * self.reg_max]'''
             return x, cls_score_list, reg_distri_list
         elif self.export:
             # cls_score_list = []
@@ -197,7 +208,8 @@ class YoloV8Detect(nn.Module):
                 reg_distri_list.append(reg_output.flatten(2).permute((0, 2, 1)))
                 
                 if self.use_dfl:
-                    reg_output = reg_output.reshape([-1, 4, self.reg_max + 1, l]).permute(0, 2, 1, 3)
+                    # reg_output = reg_output.reshape([-1, 4, self.reg_max + 1, l]).permute(0, 2, 1, 3)
+                    reg_output = reg_output.reshape([-1, 4, self.reg_max, l]).permute(0, 2, 1, 3)
                     reg_output = self.proj_conv(F.softmax(reg_output, dim=1))
                 
                 cls_output = torch.sigmoid(cls_output)

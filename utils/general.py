@@ -1,8 +1,3 @@
-# EfficientTeacher by Alibaba Cloud 
-"""
-General utils
-"""
-
 import contextlib
 import glob
 import logging
@@ -513,7 +508,7 @@ def labels_to_class_weights(labels, nc=80):
         return torch.Tensor()
 
     labels = np.concatenate(labels, 0)  # labels.shape = (866643, 5) for COCO
-    classes = labels[:, 0].astype(np.int)  # labels = [class xywh]
+    classes = labels[:, 0].astype(np.int32)  # labels = [class xywh]
     weights = np.bincount(classes, minlength=nc)  # occurrences per class
 
     # Prepend gridpoint count (for uCE training)
@@ -528,7 +523,7 @@ def labels_to_class_weights(labels, nc=80):
 
 def labels_to_image_weights(labels, nc=80, class_weights=np.ones(80)):
     # Produces image weights based on class_weights and image contents
-    class_counts = np.array([np.bincount(x[:, 0].astype(np.int), minlength=nc) for x in labels])
+    class_counts = np.array([np.bincount(x[:, 0].astype(np.int32), minlength=nc) for x in labels])
     image_weights = (class_weights.reshape(1, nc) * class_counts).sum(1)
     # index = random.choices(range(n), weights=image_weights, k=1)  # weight image sample
     return image_weights
@@ -634,6 +629,25 @@ def xywh2xyxy(x):
     y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
     y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
     y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    return y
+
+def xywh2xyxy8(x):
+    """
+    Convert bounding box coordinates from (x, y, width, height) format to (x1, y1, x2, y2) format where (x1, y1) is the
+    top-left corner and (x2, y2) is the bottom-right corner. Note: ops per 2 channels faster than per channel.
+
+    Args:
+        x (np.ndarray | torch.Tensor): The input bounding box coordinates in (x, y, width, height) format.
+
+    Returns:
+        y (np.ndarray | torch.Tensor): The bounding box coordinates in (x1, y1, x2, y2) format.
+    """
+    assert x.shape[-1] == 4, f"input shape last dimension expected 4 but input shape is {x.shape}"
+    y = empty_like(x)  # faster than clone/copy
+    xy = x[..., :2]  # centers
+    wh = x[..., 2:] / 2  # half width-height
+    y[..., :2] = xy - wh  # top left xy
+    y[..., 2:] = xy + wh  # bottom right xy
     return y
 
 
@@ -933,6 +947,7 @@ def non_max_suppression_ssod(prediction, conf_thres=0.25, iou_thres=0.45, classe
             continue
 
         # Compute conf
+        x[:, 5:5+nc] = torch.nan_to_num(x[:, 5:5+nc], nan = 0)
         cls_score, _ = x[:, 5:5+nc].max(1, keepdim=True)
         x[:, 5:5+nc] *= x[:, 4:5]  # conf = obj_conf * cls_conf
         # x[:, -1:] *= x[:, 4:5]
@@ -940,17 +955,16 @@ def non_max_suppression_ssod(prediction, conf_thres=0.25, iou_thres=0.45, classe
 
         # Box (center x, center y, width, height) to (x1, y1, x2, y2)
         box = xywh2xyxy(x[:, :4])
-        # print(x[:, :4])
-        # print(box)
-
         # Detections matrix nx6 (xyxy, conf, cls)
         if multi_label:
             i, j = (x[:, 5:5+nc] > conf_thres).nonzero(as_tuple=False).T
+            print(f"check cls : {x[:, 5:5+nc] > conf_thres}")
             x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
         else:  # best class only
             conf, j = x[:, 5:5+nc].max(1, keepdim=True)
             obj = x[:, 4:5]
             x = torch.cat((box, conf, j.float(), obj, cls_score), 1)[conf.view(-1) > conf_thres]
+            torch.save({'conf': conf.view(-1), 'conf_thres': conf_thres, 'threshold': (conf.view(-1) > conf_thres).sum().item()}, "SSOD.pt")
          # Detections matrix nx6 (xyxy, conf, cls)
 
         # Filter by class
@@ -1055,7 +1069,6 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
             conf, j = x[:, 5:].max(1, keepdim=True)
             x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
          # Detections matrix nx6 (xyxy, conf, cls)
-
         # Filter by class
         if classes is not None:
             x = x[(x[:, 5:6] == torch.tensor(classes, device=x.device)).any(1)]
@@ -1327,3 +1340,9 @@ def increment_path(path, exist_ok=False, sep='', mkdir=False):
     if not dir.exists() and mkdir:
         dir.mkdir(parents=True, exist_ok=True)  # make directory
     return path
+
+def empty_like(x):
+    """Creates empty torch.Tensor or np.ndarray with same shape as input and float32 dtype."""
+    return (
+        torch.empty_like(x, dtype=torch.float32) if isinstance(x, torch.Tensor) else np.empty_like(x, dtype=np.float32)
+    )

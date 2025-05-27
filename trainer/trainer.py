@@ -28,6 +28,7 @@ from utils.general import labels_to_class_weights, init_seeds, \
     strip_optimizer, check_img_size, check_suffix, one_cycle, colorstr, methods
 from utils.downloads import attempt_download
 from models.loss.loss import ComputeLoss, ComputeNanoLoss
+from models.loss.tal_loss import ComputeTalLoss
 from models.loss.yolox_loss import ComputeFastXLoss
 from utils.plots import plot_labels
 from utils.torch_utils import ModelEMA, de_parallel, intersect_dicts, torch_distributed_zero_first, is_parallel
@@ -143,7 +144,7 @@ class Trainer:
             self.model.load_state_dict(csd, strict=False)  # load
             LOGGER.info(f'Transferred {len(csd)}/{len(self.model.state_dict())} items from {weights}')  # report
         else:
-            self.model = Model(cfg).to(device)  # create
+            self.model = Model(cfg).to(device)  # create model
             ckpt = None
         # Freeze
         freeze = [f'model.{x}.' for x in range(cfg.freeze_layer_num)]  # layers to freeze
@@ -323,6 +324,8 @@ class Trainer:
             self.compute_loss = ComputeFastXLoss(self.model, cfg)
         elif cfg.Loss.type == 'ComputeNanoLoss':
             self.compute_loss = ComputeNanoLoss(self.model, cfg)
+        elif cfg.Loss.type == 'ComputeTalLoss':
+            self.compute_loss = ComputeTalLoss(self.model, cfg)
         else:
             raise NotImplementedError
 

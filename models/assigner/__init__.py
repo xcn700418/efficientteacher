@@ -1,2 +1,4 @@
 from .simota_assigner import SimOTAAssigner
 from .yolo_anchor_assigner import YOLOAnchorAssigner
+from .task_align_assigner import TaskAlignedAssigner
+# from .yolo_anchor_free_assigner import YOLOAnchorFreeAssigner

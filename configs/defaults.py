@@ -151,8 +151,8 @@ _C.Loss.qfl_use_sigmoid=True
 _C.Loss.qfl_beta=2.0 #nanodet
 _C.Loss.qfl_loss_weight=1.0
 _C.Loss.dfl_loss_weight=0.25
-_C.Loss.reg_max=7
-
+#_C.Loss.reg_max=7
+_C.Loss.reg_max = 16
 #YOLOX使用的loss参数
 _C.Loss.box_loss_weight=5.0
 _C.Loss.obj_loss_weight=1.0
@@ -259,6 +259,7 @@ _C.SSOD.teacher_loss_weight = 0.1 #关键参数，伪标签loss权重
 _C.SSOD.cls_loss_weight= 0.0
 _C.SSOD.obj_loss_weight= 1.0
 _C.SSOD.box_loss_weight= 0.0
+_C.SSOD.dfl_loss_weight= 0.25
 _C.SSOD.focal_loss= 0.0
 _C.SSOD.loss_type='ComputeStudentLoss'
 _C.SSOD.pseudo_label_type='FairPseudoLabel'

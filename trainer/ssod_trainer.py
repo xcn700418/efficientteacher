@@ -50,6 +50,11 @@ import copy
 
 LOGGER = logging.getLogger(__name__)
 
+def get_tuple_size(t):
+    if isinstance(t, tuple):
+        return [len(t)] + get_tuple_size(t[0])
+    return []
+
 class SSODTrainer(Trainer):
     def __init__(self, cfg, device, callbacks, LOCAL_RANK, RANK, WORLD_SIZE):
         self.cfg = cfg
@@ -65,7 +70,7 @@ class SSODTrainer(Trainer):
                 f'Starting training for {self.epochs} epochs...')
         # self.no_aug_epochs = cfg.hyp.no_aug_epochs
         # burn_epochs = cfg.hyp.burn_epochs
-        if cfg.SSOD.pseudo_label_type == 'FairPseudoLabel':
+        if cfg.SSOD.pseudo_label_type == 'FairPseudoLabel': #default
             self.pseudo_label_creator = FairPseudoLabel(cfg)
         elif cfg.SSOD.pseudo_label_type == 'LabelMatch':
             self.pseudo_label_creator = LabelMatch(cfg, int(self.unlabeled_dataset.__len__()/self.WORLD_SIZE), self.label_num_per_image, cls_ratio_gt= self.cls_ratio_gt)
@@ -269,7 +274,7 @@ class SSODTrainer(Trainer):
                 pred, sup_feats = self.model(imgs)  # forward
                 loss, loss_items = self.compute_loss(pred, targets.to(self.device))  # loss scaled by batch_size
                 if self.model_type in ['yolox', 'tal']:
-                    un_sup_loss, un_sup_loss_items = self.compute_un_sup_loss(pred, pred, targets.to(self.device))  
+                    un_sup_loss, un_sup_loss_items = self.compute_un_sup_loss(pred, targets.to(self.device))  
                 else:
                     un_sup_loss, un_sup_loss_items = self.compute_un_sup_loss(pred, targets.to(self.device))  
             if self.RANK in [-1, 0]:
@@ -293,7 +298,7 @@ class SSODTrainer(Trainer):
         
     
     def train_in_epoch(self, callbacks):
-        if ( self.epoch < self.cfg.hyp.burn_epochs):
+        if (self.epoch < self.cfg.hyp.burn_epochs):
             if self.cfg.SSOD.with_da_loss:
                 self.train_without_unlabeled_da(callbacks)
             else:
@@ -307,13 +312,11 @@ class SSODTrainer(Trainer):
                 for k, v in self.ema.ema.state_dict().items():
                     if v.dtype.is_floating_point:
                         msd[k] = v
-                    # if self.RANK in [-1, 0]:
-                    #     print('ema:', v)
-                    #     print('msd:', msd[k])
                 if self.cosine_ema:
                     self.semi_ema = CosineEMA(self.ema.ema, decay_start=self.cfg.SSOD.ema_rate, total_epoch=self.epochs - self.cfg.hyp.burn_epochs)
                 else:
                     self.semi_ema = SemiSupModelEMA(self.ema.ema, self.cfg.SSOD.ema_rate)
+
             self.train_with_unlabeled(callbacks)
     
     def after_epoch(self, callbacks, val):
@@ -432,7 +435,7 @@ class SSODTrainer(Trainer):
             with amp.autocast(enabled=self.cuda):
                 pred, sup_feats = self.model(imgs)  # forward
                 loss, loss_items = self.compute_loss(pred, targets.to(self.device))  # loss scaled by batch_size 
-
+                LOGGER.info(f"CHECK supervised loss in normal training: {loss}")
                 if self.RANK != -1:
                     loss *= self.WORLD_SIZE  # gradient averaged between devices in DDP mode
                     # print(self.WORLD_SIZE)
@@ -496,6 +499,7 @@ class SSODTrainer(Trainer):
         for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
             ni = i + self.nb * self.epoch  # number integrated batches (since train start)
             imgs = imgs.to(self.device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
+            # Retrieves a batch of data from the self.unlabeled_dataloader
             target_imgs, target_targets, target_paths, _, target_imgs_ori, target_M = next(self.unlabeled_dataloader.__iter__())
             target_imgs_ori = target_imgs_ori.to(self.device, non_blocking=True).float() / 255.0 
             total_imgs = torch.cat([imgs, target_imgs_ori], 0)
@@ -574,7 +578,7 @@ class SSODTrainer(Trainer):
             elif self.model_type in ['yolox', 'yoloxkp']:
                 sup_pred = [total_pred[0][:n_img, :, :], total_pred[1][:n_img, :, :], total_pred[2][:n_img, :, :]]
                 un_sup_pred = [total_pred[0][n_img:, :, :], total_pred[1][n_img:, :, :], total_pred[2][n_img:, :, :]]
-            elif self.model_type == 'tal':
+            elif self.model_type == 'tal':# []
                 sup_pred = [[total_pred[0][0][:n_img, :, :, :], total_pred[0][1][:n_img, :, :, :], total_pred[0][2][:n_img, :, :, :]], total_pred[1][:n_img, :, :], total_pred[2][:n_img, :, :]]
                 un_sup_pred = [[total_pred[0][0][n_img:, :, :, :], total_pred[0][1][n_img:, :, :, :], total_pred[0][2][n_img:, :, :, :]], total_pred[1][n_img:, :, :], total_pred[2][n_img:, :, :]]
             # elif self.model_type == 'yoloxkp':
@@ -597,8 +601,10 @@ class SSODTrainer(Trainer):
             with torch.no_grad():
                 if self.model_type in ['yolov5']:
                     (teacher_pred, train_out), teacher_feature = self.ema.ema(unlabeled_imgs_ori, augment=False)
-                # elif self.model_type == 'tal':
-                #     teacher_pred, teacher_feature = self.ema.ema(unlabeled_imgs_ori, augment=False)
+                    #LOGGER.info(f"yolov5 output pred: {teacher_pred.shape}")    #[16,25200,25]
+                elif self.model_type == 'tal':
+                    (teacher_pred, train_out), teacher_feature = self.ema.ema(unlabeled_imgs_ori, augment=False)
+                    #LOGGER.info(f"yolov8 output pred: {teacher_pred.shape}")    #[16, 8400,25]
                 # elif self.model_type == 'yoloxkp':
                 #     teacher_pred, teacher_feature = self.ema.ema(unlabeled_imgs_ori, augment=False)
                     # teacher_pred = torch.cat(outputs, 1)
@@ -615,18 +621,28 @@ class SSODTrainer(Trainer):
         elif len(self.extra_teacher_models) == 0 :
             if self.cfg.SSOD.pseudo_label_type == 'LabelMatch':
                 self.pseudo_label_creator.update(targets, n_img, n_pse_img)
+            # pseudo label create by teacher    (POSSIBLE CAUSE)
             unlabeled_targets, invalid_target_shape = self.pseudo_label_creator.create_pseudo_label_online_with_gt(teacher_pred, copy.deepcopy(unlabeled_imgs), unlabeled_M, copy.deepcopy(unlabeled_imgs_ori), unlabeled_gt, self.RANK)
             unlabeled_imgs = unlabeled_imgs.to(self.device)
         else:    
             raise NotImplementedError
 
         total_imgs = torch.cat([imgs, unlabeled_imgs], 0)
-        
         with amp.autocast(enabled=self.cuda):
             total_pred, total_feature = self.model(total_imgs)  # forward
+            print(f"total_pred:{len(total_pred)}")  # 3
+            print(f"total_feature:{len(total_feature)}") # 3
+            # split image into supervised & unsupervised
             sup_pred, sup_feature, un_sup_pred, un_sup_feature = self.split_predict_and_feature(total_pred, total_feature, n_img)
+            import math
+            # print(f"sup_pred has NAN: {any(math.isnan(x) for x in sup_pred if isinstance(x, float))}")
+            # print(f"sup_pred has NAN in total of: {sum(1 for x in sup_pred if isinstance(x, float) and math.isnan(x))}")
+            # print(f"un_sup_pred has NAN: {any(math.isnan(x) for x in un_sup_pred if isinstance(x, float))}")
+            # print(f"un_sup_pred has NAN in total of: {sum(1 for x in un_sup_pred if isinstance(x, float) and math.isnan(x))}")
+            # COMPUTE supervised loss
             sup_loss, sup_loss_items = self.compute_loss(sup_pred, targets.to(self.device)) 
-
+            LOGGER.info(f"CHECK supervised loss in SSOD training: {sup_loss}")
+            
             #计算domain adaptation部分loss
             d_loss = self.domain_loss(sup_feature)
             t_loss = self.target_loss(un_sup_feature) 
@@ -638,11 +654,14 @@ class SSODTrainer(Trainer):
             if self.RANK != -1:
                 sup_loss *= self.WORLD_SIZE  # gradient averaged between devices in DDP mode
             if( invalid_target_shape ): #伪标签生成质量没有达到要求之前不计算loss
+                # LOGGER.info(f"target quality too bad")
                 un_sup_loss = torch.zeros(1, device=self.device) 
                 un_sup_loss_items = dict(ss_box=0, ss_obj=0, ss_cls=0)
                 un_sup_loss = un_sup_loss * 0.0
             else:
+                # COMPUTE unsupervised loss
                 un_sup_loss, un_sup_loss_items = self.compute_un_sup_loss(un_sup_pred, unlabeled_targets.to(self.device))  
+                LOGGER.info(f"CHECK unsupervised loss: {un_sup_loss}")
                 # un_sup_loss = un_sup_loss * self.cfg.SSOD.teacher_loss_weight
             if self.RANK != -1:
                 un_sup_loss *= self.WORLD_SIZE
