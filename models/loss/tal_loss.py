@@ -52,7 +52,7 @@ class ComputeTalLoss:
         # step_num
     ):
 
-        with torch.cuda.amp.autocast(enabled=False):
+        with torch.amp.autocast('cuda',enabled=False):
             feats, pred_scores, pred_distri = outputs
             pred_scores = pred_scores.float()
             pred_distri = pred_distri.float()

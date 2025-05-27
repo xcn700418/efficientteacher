@@ -270,7 +270,7 @@ class SSODTrainer(Trainer):
     def update_train_logger(self):
         for (imgs, targets, paths, _) in self.train_loader:  # batch -------------------------------------------------------------
             imgs = imgs.to(self.device, non_blocking=True).float() / self.norm_scale  # uint8 to float32, 0-255 to 0.0-1.0
-            with amp.autocast(enabled=self.cuda):
+            with torch.amp.autocast('cuda',enabled=self.cuda):
                 pred, sup_feats = self.model(imgs)  # forward
                 loss, loss_items = self.compute_loss(pred, targets.to(self.device))  # loss scaled by batch_size
                 if self.model_type in ['yolox', 'tal']:
@@ -432,7 +432,7 @@ class SSODTrainer(Trainer):
             imgs = imgs.to(self.device, non_blocking=True).float() / 255.0  # uint8 to float32, 0-255 to 0.0-1.0
             # Forward
             #with torch.autograd.set_detect_anomaly(True):
-            with amp.autocast(enabled=self.cuda):
+            with torch.amp.autocast('cuda',enabled=self.cuda):
                 pred, sup_feats = self.model(imgs)  # forward
                 loss, loss_items = self.compute_loss(pred, targets.to(self.device))  # loss scaled by batch_size 
                 LOGGER.info(f"CHECK supervised loss in normal training: {loss}")
